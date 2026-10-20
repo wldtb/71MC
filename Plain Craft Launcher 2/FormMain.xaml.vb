@@ -11,7 +11,6 @@ Public Class FormMain
         Sub()
             MyMsgBox("71MC 已更新。完整版本说明请查看 71MC 官网。", "71MC " & VersionDisplay)
         End Sub, "71MC UpdateLog")
-    End Sub, "UpdateLog Output")
     End Sub
 
     '窗口加载
@@ -616,8 +615,6 @@ Public Class FormMain
         Catch ex As Exception
             Logger.Error(ex, "切回窗口时出错")
         End Try
-    End Sub)
-        End Sub)
     End Sub
 
     '文件拖放
