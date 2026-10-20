@@ -345,6 +345,8 @@ healthchecksdb
 MaskFiles/
 
 # 71MC server private state and release packages
+!/server/bin/
+!/server/bin/console.php
 /server/storage/*
 !/server/storage/.gitkeep
 /server/config/local.php
