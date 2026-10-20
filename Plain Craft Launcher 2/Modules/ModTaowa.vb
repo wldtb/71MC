@@ -1,4 +1,4 @@
-Public Module Pcl2Taowa
+﻿Public Module Pcl2Taowa
 
     Private ReadOnly Gate As New Object
     Private ReadOnly Http As HttpClient = CreateHttpClientNoProxy()
@@ -60,7 +60,7 @@ Public Module Pcl2Taowa
         If CachedPublicNodes IsNot Nothing AndAlso (Date.UtcNow - NodesCachedAt).TotalMinutes < 30 Then Return CachedPublicNodes
         Dim Nodes As New List(Of String)
         Try
-            Dim FetchTask = Http.GetStringAsync("https://terracotta.glavo.site/nodes")
+            Dim FetchTask = Http.GetStringAsync("https://mcgame1.710080.xyz/api/v1/multiplayer/nodes")
             If FetchTask.Wait(6000) Then
                 ExtractUrlsFromJson(FetchTask.Result, Nodes)
                 Log("fetched glavo nodes: " & Nodes.Count)

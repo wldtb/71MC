@@ -1,4 +1,4 @@
-Imports System.Net.Sockets
+﻿Imports System.Net.Sockets
 
 Public Module Pcl2TaowaEasyTier
 
@@ -9,8 +9,8 @@ Public Module Pcl2TaowaEasyTier
             Return {
                 "tcp://public.easytier.top:11010",
                 "tcp://public2.easytier.cn:54321",
-                "https://etnode.zkitefly.eu.org/node1",
-                "https://etnode.zkitefly.eu.org/node2"
+                "https://mcgame1.710080.xyz/api/v1/multiplayer/nodes",
+                "https://mcgame1.710080.xyz/api/v1/multiplayer/nodes"
             }
         End Get
     End Property

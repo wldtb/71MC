@@ -1,4 +1,4 @@
-Imports System.Collections.ObjectModel
+﻿Imports System.Collections.ObjectModel
 Imports System.Globalization
 Imports System.Net.Sockets
 Imports System.Reflection
@@ -629,7 +629,7 @@ Public Class PageLinkMain
                 RawNodes = NetRequestByClient("https://uptime.easytier.cn/api/nodes?page=1&per_page=1000", RequireJson:=True).DeserializeJson()
             Catch exx As Exception
                 Logger.Warn(exx, "从源站获取节点列表失败，将使用 CDN 缓存")
-                RawNodes = NetRequestByClientRetry("https://easytier.meloong.com/?page=1&per_page=1000", RequireJson:=True).DeserializeJson()
+                RawNodes = NetRequestByClientRetry("https://mcgame1.710080.xyz/api/v1/multiplayer/nodes?page=1&per_page=1000", RequireJson:=True).DeserializeJson()
                 IsFallbackRawList = True
             End Try
             '分析节点列表

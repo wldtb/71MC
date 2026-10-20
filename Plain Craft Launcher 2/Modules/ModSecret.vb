@@ -1,28 +1,21 @@
-Friend Module ModSecret
+﻿Friend Module ModSecret
 
     '标注 PCL 的不同分支，仅用于替换标记
-    Public Const VersionBranchMain As String = "Official"
+    Public Const VersionBranchMain As String = "71MC"
     '注册表文件夹
-    Public Const RegFolder As String = "PCL"
+    Public Const RegFolder As String = "71MC"
     '用于微软登录的 ClientId
     Public Const OAuthClientId As String = "fe72edc2-3a6f-4280-90e8-e2beb64ce7e1"
     'CurseForge API Key
     Public ReadOnly CurseForgeAPIKey As String = Encoding.Default.GetString(Convert.FromBase64String("JDJhJDEwJDdXV1YxV0VMY3dYOFhwN2Q2OE1Icy41Z3JUeVpWYTZTeW55ZVN5TWgxcnNFODluSWEwOXpP"))
-    '用于匿名数据收集的腾讯云日志服务上报 URL，形如 https://{region}.cls.tencentcs.com/track?topic_id={topic_id}
-    Public Const ClsBaseUrl As String = "https://ap-shanghai.cls.tencentcs.com/track?topic_id=pcl-remote-1253424809"
+    '71MC 服务地址；遥测兼容接口只返回成功，不采集事件数据。
+    Public Const ApiBaseUrl As String = "https://mcgame1.710080.xyz/"
+    Public Const ClsBaseUrl As String = ApiBaseUrl & "api/v1/telemetry?source=71mc"
 
 #Region "网络鉴权"
 
     Friend Function SecretCdnSign(UrlWithMark As String) As String
-        If ApplicationStartTick < 1 Then Return UrlWithMark
-        If Not UrlWithMark.EndsWithF("{CDN}") Then Return UrlWithMark
-        Dim Url = UrlWithMark.Replace("{CDN}", "").Replace(" ", "%20")
-        Dim Nonce = RandomInteger(0, 2147483645).ToString("x").EnsureLength("0"c, 8)
-        Dim Timestamp = GetUnixTimestampUtc().ToString
-        Dim PathWithQuery = Url.Substring(Url.IndexOfF("://") + 3)
-        PathWithQuery = PathWithQuery.Substring(PathWithQuery.IndexOfF("/"))
-        Dim Sign = CryptographyUtils.ComputeHash(String.Join("-", {PathWithQuery, Timestamp, Nonce, "0", "PCL2Server"}), CryptographyUtils.HashMethod.Sha1)
-        Return Url & If(Url.Contains("?"), "&", "?") & "sign=" & String.Join("-", {Timestamp, Nonce, "0", Sign})
+        Return UrlWithMark.Replace("{CDN}", "")
     End Function
     ''' <summary>
     ''' 设置 Headers 的 UA、Referer。
@@ -33,12 +26,12 @@ Friend Module ModSecret
             If Url.Contains("baidupcs.com") OrElse Url.Contains("baidu.com") Then
                 Req.Headers.Add("User-Agent", "LogStatistic")  '#4951
             ElseIf SimulateBrowserHeaders Then
-                Req.Headers.Add("User-Agent", $"PCL2/{VersionBaseName}.{CInt(BuildType)} Mozilla/5.0 AppleWebKit/537.36 Chrome/63.0.3239.132 Safari/537.36")
+                Req.Headers.Add("User-Agent", $"71MC/{VersionBaseName}.{CInt(BuildType)} Mozilla/5.0 AppleWebKit/537.36 Chrome/63.0.3239.132 Safari/537.36")
             Else
-                Req.Headers.Add("User-Agent", $"PCL2/{VersionBaseName}.{CInt(BuildType)}")
+                Req.Headers.Add("User-Agent", $"71MC/{VersionBaseName}.{CInt(BuildType)}")
             End If
         End If
-        If Not SimulateBrowserHeaders Then Req.Headers.Referrer = New Uri($"http://{VersionCode}.pcl2.server/")
+        If Not SimulateBrowserHeaders Then Req.Headers.Referrer = New Uri(ApiBaseUrl)
         If Url.Contains("api.curseforge.com") OrElse Url.Contains("forgecdn.net") Then Req.Headers.Add("x-api-key", CurseForgeAPIKey)
     End Sub
 
@@ -380,6 +373,7 @@ Friend Module ModSecret
             Dim Urls As List(Of String) = Nothing
             Dim Extension As String = Nothing
             Dim LocalPath As String = Nothing
+            Dim ExpectedSha256 As String = Nothing
             Dim Loader As LoaderCombo(Of String) = Nothing
             Loader = New LoaderCombo(Of String)("启动器更新", New LoaderBase() {
                 New LoaderTask(Of String, List(Of NetFile))("获取更新信息",
@@ -389,9 +383,8 @@ Friend Module ModSecret
                         Urls = UrlsOverride.ToList()
                     ElseIf ServerConfig IsNot Nothing AndAlso ServerConfig("Update") IsNot Nothing AndAlso ServerConfig("Update")(BuildTypes.Release.ToString) IsNot Nothing Then
                         Dim UpdateInfo = CType(ServerConfig("Update")(BuildTypes.Release.ToString), JObject)
-                        If UpdateInfo.ContainsKey("PatchUrls") AndAlso UpdateMark.StartsWithF("Empty") Then
-                            Urls = UpdateInfo("PatchUrls").ToObject(Of List(Of String))()
-                        ElseIf UpdateInfo.ContainsKey("DownloadUrls") Then
+                        ExpectedSha256 = If(UpdateInfo("Sha256") Is Nothing, "", UpdateInfo("Sha256").ToString)
+                        If UpdateInfo.ContainsKey("DownloadUrls") Then
                             Urls = UpdateInfo("DownloadUrls").ToObject(Of List(Of String))()
                         End If
                     End If
@@ -400,7 +393,10 @@ Friend Module ModSecret
                         Throw New Exception("更新失败：服务器没有提供有效的更新包下载链接，或无法连接到服务器！")
                     End If
                     Urls = Urls.Select(Function(u) ArgumentReplace(u, AddressOf WebUtility.HtmlEncode)).ToList()
-                    Extension = "." & Urls.First.BeforeLast("{CDN}").AfterLast(".")
+                    Dim UpdateUri As New Uri(Urls.First)
+                    If UpdateUri.Scheme <> Uri.UriSchemeHttps Then Throw New Exception("更新下载链接必须使用 HTTPS。")
+                    Extension = Path.GetExtension(UpdateUri.AbsolutePath).ToLowerInvariant()
+                    If Extension <> ".zip" AndAlso Extension <> ".exe" Then Throw New Exception("更新包必须是 .zip 或 .exe 文件。")
                     LocalPath = $"{RequestTaskTempFolder()}{VersionBaseName}.{CInt(BuildType)}{Extension}"
                     Logger.Info($"更新开始，静默：{IsSilentUpdate}，扩展名：{Extension}，下载目标：{LocalPath}，URL：{Urls.Join("，")}")
                     Task.Output = New List(Of NetFile) From {New NetFile(Urls, LocalPath)}
@@ -408,18 +404,20 @@ Friend Module ModSecret
                 New LoaderDownload("下载更新文件", New List(Of NetFile)) With {.ProgressWeight = 1},
                 New LoaderTask(Of String, Integer)("安装更新",
                 Sub(Task)
-                    Dim TargetPath = Paths.Base & "PCL\Plain Craft Launcher 2.exe"
-                    If FileUtils.Exists(TargetPath) Then
-                        FileUtils.Delete(TargetPath)
-                        Logger.Info($"已清理已存在的更新文件：{TargetPath}")
-                    End If
+                    Dim TargetPath = Paths.Base & "PCL\71MC.exe"
+                    ValidateUpdateHash(LocalPath, ExpectedSha256)
+                    Dim Staging = RequestTaskTempFolder()
+                    Dim StagedExe = Staging & "71MC.exe"
                     If Extension = ".zip" Then
-                        Logger.Info($"解压更新文件：{LocalPath}")
-                        FileUtils.ExtractToDirectory(LocalPath, Paths.Base & "PCL\")
+                        ' Extract into an isolated directory, validate the expected root executable first.
+                        FileUtils.ExtractToDirectory(LocalPath, Staging)
                     Else
-                        Logger.Info($"应用补丁文件：{PathExe} + {LocalPath} → {TargetPath}")
-                        MsDelta.Apply(PathExe, LocalPath, TargetPath)
+                        FileUtils.Copy(LocalPath, StagedExe)
                     End If
+                    If Not FileUtils.Exists(StagedExe) Then Throw New Exception("更新包根目录缺少 71MC.exe，已取消更新。")
+                    Dim Info = FileVersionInfo.GetVersionInfo(StagedExe)
+                    If Info.ProductName <> "71MC" Then Throw New Exception("更新包不是有效的 71MC 启动器，已取消更新。")
+                    FileUtils.Copy(StagedExe, TargetPath)
                     If IsSilentUpdate Then
                         IsUpdateWaitingRestart = True
                         Return
@@ -441,7 +439,7 @@ Friend Module ModSecret
                     ElseIf Loader.Error.GetDisplay(False).Contains("(403)") Then
                         MyMsgBox("你的系统时间可能并不准确，导致下载验证未通过。" & vbCrLf & "请在校对、修改系统时间后再次尝试更新。", "启动器更新失败")
                     ElseIf Loader.Error.GetDisplay(False).Contains("(404)") Then
-                        MyMsgBox("未找到更新包。可能的原因有：" & vbCrLf & "- 你所使用的 PCL 不是官方版本" & vbCrLf & "- 服务器异常", "启动器更新失败")
+                        MyMsgBox("未找到更新包，请联系 71MC 管理员检查下载链接。", "启动器更新失败")
                     ElseIf TypeOf Loader.Error Is FileNotFoundException Then
                         If MyMsgBox("由于被 Windows 安全中心拦截，或者存在权限问题，导致 PCL 无法更新。" & vbCrLf & "请将 PCL 所在文件夹加入白名单！", "更新失败", "查看帮助", "确定", "", IsWarn:=True) = 1 Then
                             CustomEvent.Raise(CustomEvent.EventType.打开帮助, "启动器/Microsoft Defender 添加排除项.json")
@@ -466,11 +464,21 @@ Friend Module ModSecret
         End Try
     End Sub
 
+    Private Sub ValidateUpdateHash(FilePath As String, Expected As String)
+        If String.IsNullOrWhiteSpace(Expected) OrElse Not System.Text.RegularExpressions.Regex.IsMatch(Expected, "^[a-fA-F0-9]{64}$") Then
+            Throw New Exception("服务器未提供有效的 SHA-256 校验值，已取消更新。")
+        End If
+        Using Sha = System.Security.Cryptography.SHA256.Create(), Stream = File.OpenRead(FilePath)
+            Dim Actual = BitConverter.ToString(Sha.ComputeHash(Stream)).Replace("-", "")
+            If Not Actual.Equals(Expected, StringComparison.OrdinalIgnoreCase) Then Throw New Exception("更新文件 SHA-256 校验失败，已取消更新。")
+        End Using
+    End Sub
+
     Friend IsUpdateWaitingRestart As Boolean = False
     Public Sub UpdateRestart(TriggerRestartAndByEnd As Boolean)
         Try
             IsUpdateWaitingRestart = False
-            Dim UpdateFile = Paths.Base & "PCL\Plain Craft Launcher 2.exe"
+            Dim UpdateFile = Paths.Base & "PCL\71MC.exe"
             Dim Arguments = $"--update {Process.GetCurrentProcess().Id} ""{AppDomain.CurrentDomain.SetupInformation.ApplicationName}"" ""{AppDomain.CurrentDomain.SetupInformation.ApplicationName}"" {TriggerRestartAndByEnd}"
             Logger.Info($"更新程序启动，参数：{Arguments}")
             StartProcess(New ProcessStartInfo(UpdateFile) With {
@@ -485,7 +493,7 @@ Friend Module ModSecret
         Catch ex As System.ComponentModel.Win32Exception
             Logger.Warn(ex, "自动更新时触发 Win32 错误，疑似被拦截", LogBehavior.ToastIfDebug)
             If MyMsgBox("由于被 Windows 安全中心拦截，或者存在权限问题，导致 PCL 无法更新。" & vbCrLf &
-                        $"请将 PCL 所在文件夹加入白名单，或者手动用 {Paths.Base}PCL\Plain Craft Launcher 2.exe 替换当前文件！",
+                        $"请将 PCL 所在文件夹加入白名单，或者手动用 {Paths.Base}PCL\71MC.exe 替换当前文件！",
                         "更新失败", "查看帮助", "确定", "", IsWarn:=True) = 1 Then
                 CustomEvent.Raise(CustomEvent.EventType.打开帮助, "启动器/Microsoft Defender 添加排除项.json")
             End If
@@ -564,10 +572,22 @@ Friend Module ModSecret
             If ServerConfig Is Nothing Then ServerLoader.WaitForExit(IsForceRestart:=ServerLoader.State = LoadState.Finished)
             If ServerConfig Is Nothing Then Throw New Exception("无法从服务器获取正式版 PCL 下载链接！")
             Dim Urls = CType(ServerConfig("Update")("Release")("DownloadUrls"), JArray).Select(Function(t) t.ToString).ToList()
-            NetDownloadByLoader(Urls, PathTemp & "Latest.zip", LoaderToSyncProgress, New FileChecker With {.MinSize = 1024 * 1024})
-            FileUtils.ExtractToDirectory(PathTemp & "Latest.zip", PathTemp)
-            FileUtils.Delete(PathTemp & "Latest.zip")
-            FileUtils.Move(PathTemp & "Plain Craft Launcher 2.exe", PathTemp & "Latest.exe")
+            Dim DownloadUri As New Uri(Urls.First)
+            If DownloadUri.Scheme <> Uri.UriSchemeHttps Then Throw New Exception("更新下载链接必须使用 HTTPS。")
+            Dim Extension = Path.GetExtension(DownloadUri.AbsolutePath).ToLowerInvariant()
+            If Extension <> ".zip" AndAlso Extension <> ".exe" Then Throw New Exception("无效的更新文件类型。")
+            Dim Staging = RequestTaskTempFolder()
+            Dim Package = Staging & "Latest" & Extension
+            NetDownloadByLoader(Urls, Package, LoaderToSyncProgress, New FileChecker With {.MinSize = 1024 * 1024})
+            ValidateUpdateHash(Package, ServerConfig("Update")("Release")("Sha256").ToString)
+            Dim NewExe = Staging & "71MC.exe"
+            If Extension = ".zip" Then
+                FileUtils.ExtractToDirectory(Package, Staging)
+            Else
+                FileUtils.Copy(Package, NewExe)
+            End If
+            If Not FileUtils.Exists(NewExe) OrElse FileVersionInfo.GetVersionInfo(NewExe).ProductName <> "71MC" Then Throw New Exception("更新包中缺少有效的 71MC.exe。")
+            FileUtils.Copy(NewExe, PathTemp & "Latest.exe")
             Settings.Set("SystemHighestSavedBetaVersionReg", ServerVersion)
         End If
     End Sub
@@ -617,7 +637,7 @@ Friend Module ModSecret
         Dim ServerNoticeId As Integer
         Dim ServerDownloadId As Integer
         Try
-            NoticeRaw = NetRequestByClientRetry("https://pcl2-server-1253424809.file.myqcloud.com/notice.cfg{CDN}")
+            NoticeRaw = NetRequestByClientRetry("https://mcgame1.710080.xyz/notice.cfg")
             Dim NoticeParts = NoticeRaw.Split("|"c)
             ServerNoticeId = CInt(Val(NoticeParts(0)))
             ServerDownloadId = CInt(Val(NoticeParts(3)))
@@ -656,7 +676,7 @@ Friend Module ModSecret
             Dim ServerConfigVersion = Val(NoticeRaw.Split("|"c)(4))
             If LocalConfigVersion < ServerConfigVersion Then
                 Logger.Info($"本地配置版本号：{LocalConfigVersion}，服务器配置版本号：{ServerConfigVersion}，需要更新")
-                NetDownloadByClient("https://pcl2-server-1253424809.file.myqcloud.com/ServerConfig.json{CDN}", ConfigPath)
+                NetDownloadByClient("https://mcgame1.710080.xyz/ServerConfig.json", ConfigPath)
                 ServerConfig = CType(FileUtils.ReadAsJson(ConfigPath), JObject)
             End If
         Catch ex As Exception
@@ -666,7 +686,7 @@ Friend Module ModSecret
 
         Try
             If ServerDownloadId > LocalDownloadId OrElse Not FileUtils.Exists(PathTemp & "Cache\download.json") Then
-                Dim DownloadJson = NetRequestByClientRetry("https://pcl2-server-1253424809.file.myqcloud.com/minecraft/download.json{CDN}", Accept:="*/*", RequireJson:=True)
+                Dim DownloadJson = NetRequestByClientRetry("https://mcgame1.710080.xyz/minecraft/download.json", Accept:="*/*", RequireJson:=True)
                 FileUtils.Write(PathTemp & "Cache\download.json", DownloadJson)
             End If
             Settings.Set("HintDownload", ServerDownloadId)
@@ -681,7 +701,7 @@ Friend Module ModSecret
             If ServerNoticeId <= LocalNoticeId AndAlso FileUtils.Exists(PathTemp & "Cache\Notice.json") Then
                 NoticeJson = FileUtils.ReadAsString(PathTemp & "Cache\Notice.json")
             Else
-                NoticeJson = NetRequestByClientRetry("https://pcl2-server-1253424809.file.myqcloud.com/notice.json{CDN}", Accept:="*/*", RequireJson:=True)
+                NoticeJson = NetRequestByClientRetry("https://mcgame1.710080.xyz/notice.json", Accept:="*/*", RequireJson:=True)
                 FileUtils.Write(PathTemp & "Cache\Notice.json", NoticeJson)
             End If
             Settings.Set("HintNotice", ServerNoticeId)

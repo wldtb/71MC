@@ -1,4 +1,4 @@
-Imports System.Collections.ObjectModel
+﻿Imports System.Collections.ObjectModel
 Imports System.Text.RegularExpressions
 
 Public Module ModModpack
@@ -792,7 +792,7 @@ Retry:
                 For Each ExeFile In DirectoryUtils.EnumerateFiles(TargetFolder, searchPattern:="*.exe")
                     Dim Info = FileVersionInfo.GetVersionInfo(ExeFile)
                     Logger.Info($"文件 {ExeFile} 的产品名标识为 {Info.ProductName}")
-                    If Info.ProductName = "Plain Craft Launcher" Then
+                    If (Info.ProductName = "Plain Craft Launcher" OrElse Info.ProductName = "71MC") Then
                         Launcher = ExeFile
                         Logger.Info($"发现整合包附带的 PCL 启动器：{ExeFile}")
                     ElseIf (Info.ProductName.ContainsIgnoreCase("Launcher") OrElse Info.ProductName.Contains("启动")) AndAlso

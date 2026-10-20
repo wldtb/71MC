@@ -1,8 +1,9 @@
-name: Build
+name: 71MC Build and Release
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -11,8 +12,26 @@ permissions:
   contents: read
 
 jobs:
+  server:
+    name: PHP API and source checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+          coverage: none
+      - name: PHP syntax
+        run: find server -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: XAML and launcher integration
+        run: python3 tools/check_source.py
+      - name: Real HTTP API and admin tests
+        run: python3 server/tests/smoke.py
+
   build:
     name: Windows Release Build
+    needs: server
     runs-on: windows-latest
 
     steps:
@@ -29,16 +48,72 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Record commit
+        shell: pwsh
+        run: |
+          $path = 'Plain Craft Launcher 2/Modules/Base/ModBase.vb'
+          $text = [IO.File]::ReadAllText($path)
+          $text = $text.Replace('CommitHash As String = ""', 'CommitHash As String = "' + '${{ github.sha }}'.Substring(0, 12) + '"')
+          [IO.File]::WriteAllText($path, $text, [Text.UTF8Encoding]::new($true))
+
       - name: Restore
         run: msbuild "Plain Craft Launcher 2.sln" /t:Restore /p:Configuration=Release /p:Platform="Any CPU"
 
       - name: Build
         run: msbuild "Plain Craft Launcher 2.sln" /m /p:Configuration=Release /p:Platform="Any CPU"
 
+      - name: Package and verify executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $exe = 'Plain Craft Launcher 2/bin/71MC.exe'
+          if (!(Test-Path $exe)) { throw '71MC.exe missing' }
+          $info = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $exe))
+          if ($info.ProductName -ne '71MC') { throw 'Product metadata mismatch' }
+          Copy-Item $exe dist/71MC.exe
+          Copy-Item "$exe.config" dist/71MC.exe.config -ErrorAction SilentlyContinue
+          Copy-Item LICENCE dist/LICENCE
+          $binaryFiles = @('dist/71MC.exe', 'dist/LICENCE')
+          if (Test-Path dist/71MC.exe.config) { $binaryFiles += 'dist/71MC.exe.config' }
+          Compress-Archive -Path $binaryFiles -DestinationPath dist/71MC-windows.zip
+          python tools/package_sources.py
+          $hash = (Get-FileHash dist/71MC-windows.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $source = [IO.File]::ReadAllText('Plain Craft Launcher 2/Modules/Base/ModBase.vb')
+          $version = [regex]::Match($source, 'VersionBaseName As String = "([^"]+)"').Groups[1].Value
+          $code = [int][regex]::Match($source, 'VersionCode As Integer = (\d+)').Groups[1].Value
+          $tag = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}' } else { 'v' + $version }
+          $release = @{
+            version = $version; version_code = $code
+            download_url = "https://github.com/${{ github.repository }}/releases/download/$tag/71MC-windows.zip"
+            sha256 = $hash; notes = "71MC $version"; published = 1
+          }
+          $release | ConvertTo-Json | Set-Content -Encoding utf8NoBOM dist/release.json
+          Get-ChildItem dist -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          } | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PCL2-Release
-          path: |
-            Plain Craft Launcher 2/bin/**
+          name: 71MC-Release
+          path: dist/*
           if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: 71MC-Release
+          path: dist
+      - name: Publish binaries and complete source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/* --title "71MC $RELEASE_TAG" --generate-notes --verify-tag

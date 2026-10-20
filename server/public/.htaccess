@@ -1,0 +1,5 @@
+Options -Indexes
+DirectoryIndex index.php
+RewriteEngine On
+RewriteRule ^assets/app\.css$ - [L]
+RewriteRule ^ index.php [L,QSA]

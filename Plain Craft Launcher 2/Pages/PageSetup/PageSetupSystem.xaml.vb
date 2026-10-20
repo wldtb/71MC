@@ -1,4 +1,4 @@
-Public Class PageSetupSystem
+﻿Public Class PageSetupSystem
 
 
     Private Sub PageSetupSystem_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
@@ -112,7 +112,7 @@ Public Class PageSetupSystem
             Dim ServerContent As String = If(FileUtils.TryReadAsString(PathTemp & "Cache\Notice.cfg"), "")
             If ServerContent.Split("|").Count < 3 Then Return Nothing
             '确认是否为最新
-            Return ServerContent.Split("|")(If(BuildType = BuildTypes.Release, 2, 1)) <= VersionCode
+            Return CInt(Val(ServerContent.Split("|")(If(BuildType = BuildTypes.Release, 2, 1)))) <= VersionCode
         Catch ex As Exception
             Logger.Error(ex, "确认启动器更新失败")
             Return Nothing

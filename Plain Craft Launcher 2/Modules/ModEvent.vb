@@ -1,4 +1,4 @@
-
+﻿
 #Region "附加属性"
 
 ''' <summary>
@@ -253,8 +253,6 @@ Public Class CustomEvent
                     RunInUiWait(Sub() PageOtherLeft.RefreshHelp())
                     If String.IsNullOrEmpty(Arg) Then Hint("已刷新！", HintType.Green)
 
-                Case EventType.今日人品
-                    PageOtherTest.Jrrp()
 
                 Case EventType.内存优化
                     RunInThread(Sub() PageOtherTest.MemoryOptimize(True))
